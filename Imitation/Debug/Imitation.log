@@ -1,0 +1,8 @@
+﻿  ImitationDlg.cpp
+d:\project\imitation\imitation\imitationdlg.cpp(185): warning C4244: “参数”: 从“int”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(638): warning C4018: “<”: 有符号/无符号不匹配
+d:\project\imitation\imitation\imitationdlg.cpp(641): warning C4018: “<”: 有符号/无符号不匹配
+d:\project\imitation\imitation\imitationdlg.cpp(645): warning C4018: “<”: 有符号/无符号不匹配
+d:\project\imitation\imitation\imitationdlg.cpp(650): warning C4018: “<”: 有符号/无符号不匹配
+  Imitation.vcxproj -> D:\Project\Imitation\Debug\Imitation.exe
+  Imitation.vcxproj -> D:\Project\Imitation\Debug\Imitation.pdb (Partial PDB)
