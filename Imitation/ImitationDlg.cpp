@@ -1,7 +1,5 @@
-
 // ImitationDlg.cpp : 实现文件
 //
-
 #include "stdafx.h"
 #include "Imitation.h"
 #include "ImitationDlg.h"
@@ -12,6 +10,9 @@
 #include <time.h>
 #include "Motor.h"
 #include "myVector.h"
+#include "myKinect.h"
+#include "floodfill.h"
+#include "Detector.h"
 #include <io.h> 
 #include <fcntl.h>
 #include <conio.h>
@@ -26,45 +27,19 @@ using namespace std;
 using namespace cv;
 
 #pragma region Global Variables
-const double pi = 3.1415926;
-double theta[4];
-int controlTheta[7];
-/*Define Global Variables*/
+const float Alpha[7] = { 0, -pi / 2, pi / 2, -pi / 2, -pi / 2, -pi / 2, pi / 2 };
+const float Theta[7] = { 0, 0, 0, -pi / 2, -pi / 2, 0, 0 };
 bool Run;
-IKinectSensor *myKinectSensor;
-ICoordinateMapper *myCoordinateMapper;
-//Color Frame Variables
-IColorFrameSource *myColorFrameSource;
-IColorFrameReader *myColorFrameReader;
-IColorFrame *myColorFrame;
-Mat img_rgb(1080, 1920, CV_8UC4);
-Mat rgb_save(1080, 1920, CV_8UC4);
-//Depth Frame Variables
-IDepthFrameSource *myDepthFrameSource;
-IDepthFrameReader *myDepthFrameReader;
-IDepthFrame *myDepthFrame;
-Mat Depth_data(424, 512, CV_16UC1);
-Mat img_depth(424, 512, CV_8UC1);
-Mat depth_save(424, 512, CV_8UC1);
-//Body Frame Variables
-IBodyFrameSource *myBodyFrameSource;
-IBodyFrameReader *myBodyFrameReader;
-IBodyFrame *myBodyFrame;
-CameraSpacePoint points[JointType_Count];
-ColorSpacePoint Cpoints[JointType_Count];
-DepthSpacePoint Dpoints[JointType_Count];
-Point Cdraw[JointType_Count];
-Point Ddraw[JointType_Count];
-bool Track; // Not using
+double theta[7];
 Motor *myMotor;
-bool depthSaved = false;
-bool colorSaved = false;
-int startTime;
+MyKinect* myKinect;
+Detector* detector;
+Mat img_color;
+Mat img_depth;
+CameraSpacePoint* points;
 bool enableMotor = false;
 bool openedMotor = false;
-thread *ColorThread;
-thread *DepthThread;
-thread *BodyThread;
+thread *MainThread;
 vector<double*> thetaRobot;
 vector<double*> thetaProcess;
 vector<Vector3D*> elbowRaw;
@@ -72,18 +47,21 @@ vector<Vector3D*> wristRaw;
 Vector3D elbowTotal(0);
 Vector3D wristTotal(0);
 int outputPeriod = 4;
-int filtersize = 100;
+int filtersize = 50;
 #pragma endregion
 #pragma region Global Function
-// Define Realease Function
-template<class Interface>
-inline void SafeRelease(Interface *& pInterfaceToRelease)
-{
-	if (pInterfaceToRelease != NULL)
-	{
-		pInterfaceToRelease->Release();
-		pInterfaceToRelease = NULL;
-	}
+Mat Rot(float alpha, float theta) {
+	Mat result(3, 3, CV_32FC1);
+	result.at<float>(0, 0) = cos(theta);
+	result.at<float>(0, 1) = -sin(theta);
+	result.at<float>(0, 2) = 0;
+	result.at<float>(1, 0) = cos(alpha) * sin(theta);
+	result.at<float>(1, 1) = cos(alpha) * cos(theta);
+	result.at<float>(1, 2) = -sin(alpha);
+	result.at<float>(2, 0) = sin(alpha) * sin(theta);
+	result.at<float>(2, 1) = sin(alpha) * cos(theta);
+	result.at<float>(2, 2) = cos(alpha);
+	return result;
 }
 //Inverse Kinematics
 void InverseKinematics(double *theta, Vector3D shoulder, Vector3D elbow, Vector3D wrist)
@@ -99,49 +77,43 @@ void InverseKinematics(double *theta, Vector3D shoulder, Vector3D elbow, Vector3
 	theta[0] = acos(elbow.x / sin(theta[1]));
 
 	theta[3] = angle(elbow, Vec1) - pi / 2;
-	theta[3] = -theta[3];
+	theta[3] = -theta[3]; // axis inverse
 
 	Vector3D nVec = cross(elbow, Vec1);
 	norm(nVec);
 	theta[2] = asin(nVec.z / sin(theta[1]));
 }
-// Delay Function
-void Delay(int ms)
-{
-	int endtime = ms + clock();
-	while (clock() < endtime);
-}
-// Function to Draw lines
-inline void DrawHelper(Mat &img, Point *&DrawPoints, const int *Index, int length)
-{
-	Point point2draw[10] = {};
-	for (int i = 0; i < length; ++i)
-		point2draw[i] = DrawPoints[Index[i]];
-	for (int i = 0; i < length - 1; ++i)
-		line(img, point2draw[i], point2draw[i + 1], Scalar(0, 255, 0), 2);
-}
-// Function to Draw Skeleton
-inline void DrawSkeleton(Mat &img, Point DrawPoints[25], int r = 20, const int length = JointType_Count)  // inline here may improve the speed
-{
-	//Index of the Skeleton data
-	const int LeftArm[] = { 20, 4, 5, 6, 7, 21 };
-	const int RightArm[] = { 20, 8, 9, 10, 11, 23 };
-	const int LeftThumb[] = { 6, 22 };
-	const int RightThumb[] = { 10, 24 };
-	const int LeftLeg[] = { 0, 12, 13, 14, 15 };
-	const int RightLeg[] = { 0, 16, 17, 18, 19 };
-	const int Spinal[] = { 3, 2, 20, 1, 0 };
-	//--------------------------------------------
-	for (int i = 0; i < length; ++i)
-		circle(img, DrawPoints[i], r, Scalar(0, 255, 0), -1);
-	DrawHelper(img, DrawPoints, LeftArm, 6);
-	DrawHelper(img, DrawPoints, RightArm, 6);
-	DrawHelper(img, DrawPoints, LeftThumb, 2);
-	DrawHelper(img, DrawPoints, RightThumb, 2);
-	DrawHelper(img, DrawPoints, LeftLeg, 5);
-	DrawHelper(img, DrawPoints, RightLeg, 5);
-	DrawHelper(img, DrawPoints, Spinal, 5);
-}
+//// Function to Draw lines
+//inline void DrawHelper(Mat &img, Point *&DrawPoints, const int *Index, int length)
+//{
+//	Point point2draw[10] = {};
+//	for (int i = 0; i < length; ++i)
+//		point2draw[i] = DrawPoints[Index[i]];
+//	for (int i = 0; i < length - 1; ++i)
+//		line(img, point2draw[i], point2draw[i + 1], Scalar(0, 255, 0), 2);
+//}
+//// Function to Draw Skeleton
+//inline void DrawSkeleton(Mat &img, Point DrawPoints[25], int r = 20, const int length = JointType_Count)  // inline here may improve the speed
+//{
+//	//Index of the Skeleton data
+//	const int LeftArm[] = { 20, 4, 5, 6, 7, 21 };
+//	const int RightArm[] = { 20, 8, 9, 10, 11, 23 };
+//	const int LeftThumb[] = { 6, 22 };
+//	const int RightThumb[] = { 10, 24 };
+//	const int LeftLeg[] = { 0, 12, 13, 14, 15 };
+//	const int RightLeg[] = { 0, 16, 17, 18, 19 };
+//	const int Spinal[] = { 3, 2, 20, 1, 0 };
+//	//--------------------------------------------
+//	for (int i = 0; i < length; ++i)
+//		circle(img, DrawPoints[i], r, Scalar(0, 255, 0), -1);
+//	DrawHelper(img, DrawPoints, LeftArm, 6);
+//	DrawHelper(img, DrawPoints, RightArm, 6);
+//	DrawHelper(img, DrawPoints, LeftThumb, 2);
+//	DrawHelper(img, DrawPoints, RightThumb, 2);
+//	DrawHelper(img, DrawPoints, LeftLeg, 5);
+//	DrawHelper(img, DrawPoints, RightLeg, 5);
+//	DrawHelper(img, DrawPoints, Spinal, 5);
+//}
 // Process Arm state
 void processArmState(CameraSpacePoint points[25])
 {
@@ -182,8 +154,155 @@ void processArmState(CameraSpacePoint points[25])
 	elbowRaw.push_back(tem);
 	tem = new Vector3D(right_wrist);
 	wristRaw.push_back(tem);
-	InverseKinematics(theta, right_shoulder, elbowTotal / filtersize, wristTotal / filtersize);
-	//_cprintf("Inverse Kinematics Result:theta1: %.2f, theta2: %.2f, theta3: %.2f, theta4: %.2f\n", theta[0], theta[1], theta[2], theta[3]);
+	if (cnt < filtersize)
+		InverseKinematics(theta, right_shoulder, elbowTotal / (cnt + 1), wristTotal / (cnt + 1));
+	else
+		InverseKinematics(theta, right_shoulder, elbowTotal / filtersize, wristTotal / filtersize);
+}
+// main thread
+void Tracking() {
+	while (Run) {
+		int lasttime = clock();
+		myKinect->update();
+		img_color = myKinect->getColor();
+		img_depth = myKinect->getDepth();
+		points = myKinect->getBody();
+		DepthSpacePoint hand;
+		myKinect->camera2depth(points + 11, &hand, 1);
+		UINT16 hand_depth = img_depth.at<UINT16>(hand.Y, hand.X);
+		UINT16 bbox = 47000 / hand_depth;
+		Mat seg = img_depth(Rect(hand.X - bbox, hand.Y - bbox, 2 * bbox, 2 * bbox));
+		Mat mask(seg.size().height, seg.size().width, CV_16UC1);
+		floodFillDepth(seg, mask, hand_depth, bbox, bbox, 15);
+		seg = seg.mul(mask);
+		Mat resized(48, 48, CV_16UC1);
+		resize(seg, resized, Size(48, 48));
+		if (openedMotor && enableMotor)
+		{	
+			// solve first four angle
+			processArmState(points); 
+			// finger detect
+			int pos[10];
+			detector->detect(resized, pos);
+			DepthSpacePoint fingers_depth[5];
+			UINT16 fingers_depthval[5];
+			CameraSpacePoint fingers_camera[5];
+			for (int i = 0; i < 5; ++i)
+			{
+				pos[2 * i] = int(float(pos[2 * i]) / 48 * seg.size().height + hand.Y - bbox);
+				pos[2 * i + 1] = int(float(pos[2 * i + 1]) / 48 * seg.size().width + hand.X - bbox);
+				fingers_depth[i].X = pos[2 * i + 1];
+				fingers_depth[i].Y = pos[2 * i];
+				fingers_depthval[i] = img_depth.at<UINT16>(fingers_depth[i].Y, fingers_depth[i].X);
+			}
+			myKinect->depth2camera(fingers_depth, fingers_camera, fingers_depthval, 5);
+			Vector3D right_shoulder(points[8]);
+			right_shoulder = rightTrans(right_shoulder);
+			Vector3D palm(points[11]);
+			palm = rightTrans(palm) - right_shoulder;
+			Vector3D fingers[5];
+			for (int i = 0; i < 5; ++i)
+			{
+				fingers[i] = Vector3D(fingers_camera[i]);
+				fingers[i] = rightTrans(fingers[i]) - right_shoulder;
+			}
+
+			Mat R04 = Rot(Alpha[0], Theta[0] + theta[0])
+				* Rot(Alpha[1], Theta[1] + theta[1])
+				* Rot(Alpha[2], Theta[2] + theta[2])
+				* Rot(Alpha[3], Theta[3] - theta[3]);
+
+			Mat Q1(5, 3, CV_32FC1);
+			Mat Z(5, 1, CV_32FC1);
+			for (int i = 0; i < 5; ++i) {
+				Q1.at<float>(i, 0) = fingers[i].x;
+				Q1.at<float>(i, 1) = fingers[i].y;
+				Q1.at<float>(i, 2) = 1;
+				Z.at<float>(i, 0) = fingers[i].z;
+			}
+			Mat invert1;
+			Mat Q1T;
+			transpose(Q1, Q1T);
+			invert(Q1T * Q1, invert1);
+			Mat THETA1 = invert1 * Q1T * Z;
+			float a = THETA1.at<float>(0, 0);
+			float b = THETA1.at<float>(1, 0);
+			float c = THETA1.at<float>(2, 0);
+			Vector3D avec(a, b, -1);
+			if (sum((fingers[0] - palm) * avec) < 0)
+				avec = avec * -1;
+			norm(avec);
+
+			Vector3D fingers_projection[5];
+			for (int i = 0; i < 5; ++i) {
+				float t = (-a * fingers[i].x - b * fingers[i].y + fingers[i].z - c) / (a * a + b * b + 1);
+				fingers_projection[i].x = a * t + fingers[i].x;
+				fingers_projection[i].y = b * t + fingers[i].y;
+				fingers_projection[i].z = -t + fingers[i].z;
+			}
+
+			Vector3D nvec = fingers_projection[1] - fingers_projection[0];
+			norm(nvec);
+			Vector3D ovec = cross(avec, nvec);
+			norm(ovec);
+			Mat R07_(3, 3, CV_32FC1);
+			R07_.at<float>(0, 0) = nvec.x;
+			R07_.at<float>(1, 0) = nvec.y;
+			R07_.at<float>(2, 0) = nvec.z;
+			R07_.at<float>(0, 1) = ovec.x;
+			R07_.at<float>(1, 1) = ovec.y;
+			R07_.at<float>(2, 1) = ovec.z;
+			R07_.at<float>(0, 2) = avec.x;
+			R07_.at<float>(1, 2) = avec.y;
+			R07_.at<float>(2, 2) = avec.z;
+			Mat Q2(4, 2, CV_32FC1);
+			Mat Y(4, 1, CV_32FC1);
+			for (int i = 0; i < 4; ++i) {
+				Q2.at<float>(i, 0) = fingers_projection[i + 1].x;
+				Q2.at<float>(i, 1) = 1;
+				Y.at<float>(i, 0) = fingers_projection[i + 1].y;
+			}
+			Mat Q2T;
+			Mat invert2;
+			transpose(Q2, Q2T);
+			invert(Q2T * Q2, invert2);
+			Mat THETA2 = invert2 * Q2T * Y;
+			float k = THETA2.at<float>(0, 0);
+			float bb = THETA2.at<float>(0, 1);
+			float d = abs(bb / sqrt(k * k + 1)); // not use
+			float alpha = atan(-1 / k) + pi / 2;
+			Mat R07 = R07_ * Rot(0, alpha);
+			Mat R04T;
+			transpose(R04, R04T);
+			Mat R47 = R04T * R07;
+			theta[5] = acos(R47.at<float>(1, 2));
+			theta[4] = asin(R47.at<float>(0, 2) / sin(theta[5]));
+			theta[6] = asin(R47.at<float>(1, 1) / sin(theta[5]));
+
+			double* tem = new double[7];
+			for (auto i = 0; i < 7; ++i)
+				tem[i] = theta[i];
+			thetaProcess.push_back(tem);
+			double *rtheta = new double[7];
+			myMotor->getTheta(rtheta);
+			thetaRobot.push_back(rtheta);
+			int cnt = elbowRaw.size();
+			if (cnt % outputPeriod == 0)
+			{
+				_cprintf("Inverse Kinematics Result:");
+				for (int i = 0; i < 7; ++i) {
+					_cprintf("theta%d: %.2f, ", (i+1), theta[i]);
+				}
+				_cprintf("\n");
+				myMotor->Move(Left, theta);
+			}
+		}
+		else
+		{
+			imshow("segmentation", resized);
+		}
+		_cprintf("time cost of last frame:\t%d", clock() - lasttime);
+	}
 }
 void InitConsoleWindow()
 {
@@ -195,155 +314,6 @@ void InitConsoleWindow()
 }
 #pragma endregion
 //-----------------------------------------
-#pragma region Color
-//A Clock Function to Find The fps of Color Frame
-void countClockColor()
-{
-	static int time = 0;
-	int nowtime = clock();
-	fprintf(stdout, "The Color Frame Cost time %d ms\n", nowtime - time);
-	time = nowtime;
-}
-//Color Frame Function
-void ColorFrame()
-{
-	const UINT buffer_size = 1920 * 1080 * 4;
-	const int r = 20;
-	namedWindow("ColorFrame", 0);
-	while (Run && (!depthSaved || enableMotor))
-	{
-		if (myColorFrameReader->AcquireLatestFrame(&myColorFrame) == S_OK &&
-			myColorFrame->CopyConvertedFrameDataToArray(buffer_size, reinterpret_cast<BYTE*>(img_rgb.data), ColorImageFormat::ColorImageFormat_Bgra) == S_OK)
-		{
-			//countClockColor();
-			//DrawSkeleton(img_rgb, Cdraw);
-			imshow("ColorFrame", img_rgb);
-			if (clock() - startTime > 5000 && !colorSaved)
-			{
-				//rgb_save = img_rgb;
-				//colorSaved = true;
-			}
-			SafeRelease(myColorFrame);
-			if (waitKey(1) == VK_ESCAPE)
-				break;
-		}
-	}
-	Run = false;
-}
-#pragma endregion
-#pragma region Depth
-//A Clock Function to Find The fps of Depth Frame
-void countClockDepth()
-{
-	static int time = 0;
-	int nowtime = clock();
-	fprintf(stdout, "The Depth Frame Cost time %d ms\n", nowtime - time);
-	time = nowtime;
-}
-//Depth Frame Function
-void DepthFrame()
-{
-	const UINT buffer_size = 424 * 512;
-	const int r = 20;
-	//namedWindow("DepthFrame");
-	while (Run && (!colorSaved || enableMotor))
-	{
-		if (myDepthFrameReader->AcquireLatestFrame(&myDepthFrame) == S_OK &&
-			myDepthFrame->CopyFrameDataToArray(buffer_size, reinterpret_cast<UINT16*>(Depth_data.data)) == S_OK)
-		{
-			//countClockDepth();
-			for (int i = 0; i < 424; ++i)
-				for (int j = 0; j < 512; ++j)
-					img_depth.at<BYTE>(i, j) = Depth_data.at<UINT16>(i, j) % 256;
-			DrawSkeleton(img_depth, Ddraw, 10);
-			imshow("DepthFrame", img_depth);
-			if (clock() - startTime > 5000 && !depthSaved)
-			{
-				//depth_save = img_depth;
-				//depthSaved = true;
-			}
-			SafeRelease(myDepthFrame);
-			if (waitKey(1) == VK_ESCAPE)
-				break;
-		}
-	}
-	Run = false;
-}
-#pragma endregion
-#pragma region Body
-//A Clock Function to Find The fps of Body Frame
-void countClockBody()
-{
-	static int time = 0;
-	int nowtime = clock();
-	fprintf(stdout, "The Body Frame Cost time %d ms\n", nowtime - time);
-	time = nowtime;
-}
-//Body Frame Function
-void BodyFrame()
-{
-	IBody* Bodys[BODY_COUNT] = { 0 };
-	while (Run)
-	{
-		if (myBodyFrameReader->AcquireLatestFrame(&myBodyFrame) == S_OK)
-		{
-			myBodyFrame->GetAndRefreshBodyData(_countof(Bodys), Bodys);
-			Track = false;
-			for (int i = 0; i < BODY_COUNT; ++i)
-			{
-				IBody *pBody = Bodys[i];
-				if (pBody)
-				{
-					BOOLEAN isTracked = false;
-					if (pBody->get_IsTracked(&isTracked) == S_OK && isTracked)
-					{
-						Joint joints[JointType_Count];
-						if (pBody->GetJoints(JointType_Count, joints) == S_OK)
-						{
-							for (int j = 0; j < JointType_Count; ++j)
-							{
-								points[j] = joints[j].Position;
-								//fprintf(stdout, "%f\t%f\t%f\n", points[j].X, points[j].Y, points[j].Z); // cost too much time!
-							}
-						}
-						if (enableMotor)
-						{
-							processArmState(points);
-							double* tem = new double[4];
-							for (auto i = 0; i < 4; ++i)
-								tem[i] = theta[i];
-							thetaProcess.push_back(tem);
-							double *rtheta = new double[4];
-							myMotor->getTheta(rtheta);
-							thetaRobot.push_back(rtheta);
-							int cnt = elbowRaw.size();
-							if (cnt % outputPeriod == 0 && cnt > filtersize)
-							{
-								_cprintf("Inverse Kinematics Result:theta1: %.2f, theta2: %.2f, theta3: %.2f, theta4: %.2f\n", theta[0], theta[1], theta[2], theta[3]);
-								myMotor->Move(Left, theta);
-							}
-							
-						}
-						Track = true;
-						myCoordinateMapper->MapCameraPointsToColorSpace(JointType_Count, points, JointType_Count, Cpoints);
-						myCoordinateMapper->MapCameraPointsToDepthSpace(JointType_Count, points, JointType_Count, Dpoints);
-						for (int j = 0; j < JointType_Count; ++j)
-						{
-							Cdraw[j].x = int(Cpoints[j].X);
-							Cdraw[j].y = int(Cpoints[j].Y);
-							Ddraw[j].x = int(Dpoints[j].X);
-							Ddraw[j].y = int(Dpoints[j].Y);
-						}
-					}
-				}
-			}
-			countClockBody();
-			SafeRelease(myBodyFrame);
-		}
-	}
-	Run = false;
-}
-#pragma endregion
 
 // 用于应用程序“关于”菜单项的 CAboutDlg 对话框
 
@@ -424,6 +394,8 @@ BOOL CImitationDlg::OnInitDialog()
 	wristTotal.z = 0;
 	InitConsoleWindow();
 	_cprintf("Open console OK\n\n");
+	myKinect = new MyKinect(false, true, true);
+	detector = new Detector();
 	// 将“关于...”菜单项添加到系统菜单中。
 
 	// IDM_ABOUTBOX 必须在系统命令范围内。
@@ -514,72 +486,39 @@ void CImitationDlg::OnBnClickedOk()
 void CImitationDlg::OnBnClickedopenkinect()
 {
 	// TODO: 在此添加控件通知处理程序代码
-#pragma region Open Sensor
-	HRESULT hr;
-	// Open Kinect Sensor
-	hr = GetDefaultKinectSensor(&myKinectSensor);
-	if (SUCCEEDED(hr))
-		hr = myKinectSensor->Open();
-	if (FAILED(hr)) {
-		_cprintf( "Open Kinect Sensor Error!\n");
-		return;
+	int state = myKinect->open();
+	switch (state)
+	{
+	case 0:
+		_cprintf("Kinect sensor is ready!\n\n");
+		break;
+	case 1:
+		_cprintf("Open Kinect Sensor Error!\n\n");
+		break;
+	case 2:
+		_cprintf("Get Coordinate Mapper Error\n\n");
+		break;
+	case 3:
+		_cprintf("Get Color Frame Source Error\n\n");
+		break;
+	case 4:
+		_cprintf("Open Color Reader Error\n\n");
+		break;
+	case 5:
+		_cprintf("Get Depth Frame Source Error\n\n");
+		break;
+	case 6:
+		_cprintf("Open Depth Reader Error\n\n");
+		break;
+	case 7:
+		_cprintf("Get Body Frame Source Error\n\n");
+		break;
+	case 8:
+		_cprintf("Open Body Frame Reader Error\n\n");
+		break;
+	default:
+		break;
 	}
-	_cprintf( "Kinect Sensor Ready!\n");
-	// Get CoordinateMapper
-	hr = myKinectSensor->get_CoordinateMapper(&myCoordinateMapper);
-	if (FAILED(hr)) {
-		_cprintf("Get Coordinate Mapper Error\n");
-		return;
-	}
-	_cprintf("Coordinate Mapper Ready!\n");
-	// Get Color Frame Source
-	hr = myKinectSensor->get_ColorFrameSource(&myColorFrameSource);
-	if (FAILED(hr)) {
-		_cprintf("Get Color Frame Source Error\n");
-		return;
-	}
-	_cprintf("Color Frame Source Ready!\n");
-	// Open Color Frame Reader
-	hr = myColorFrameSource->OpenReader(&myColorFrameReader);
-	if (FAILED(hr)) {
-		_cprintf("Open Color Reader Error\n");
-		return;
-	}
-	_cprintf("Color Frame Reader Ready!\n");
-	// Get Depth Frame Source
-	hr = myKinectSensor->get_DepthFrameSource(&myDepthFrameSource);
-	if (FAILED(hr)) {
-		_cprintf("Get Depth Frame Source Error\n");
-		return;
-	}
-	_cprintf("Depth Frame Source Ready!\n");
-	// Open Depth Frame Reader
-	hr = myDepthFrameSource->OpenReader(&myDepthFrameReader);
-	if (FAILED(hr)) {
-		_cprintf("Open Depth Reader Error\n");
-		return;
-	}
-	_cprintf("Depth Frame Reader Ready!\n");
-	// Get Body Frame Source
-	hr = myKinectSensor->get_BodyFrameSource(&myBodyFrameSource);
-	if (FAILED(hr)) {
-		_cprintf("Get Body Frame Source Error\n");
-		return;
-	}
-	_cprintf("Body Frame Source Ready!\n");
-	// Open Body Frame Reader
-	hr = myBodyFrameSource->OpenReader(&myBodyFrameReader);
-	if (FAILED(hr)) {
-		_cprintf("Open Body Frame Reader Error\n");
-		return;
-	}
-	_cprintf("Body Frame Reader Ready!\n");
-	BOOLEAN isAvailable = false;
-	do {
-		myKinectSensor->get_IsAvailable(&isAvailable);
-	} while (!isAvailable);
-	_cprintf("Kinect sensor is ready!\n\n");
-#pragma endregion
 }
 
 
@@ -596,15 +535,7 @@ void CImitationDlg::OnBnClickedopenmotor()
 void CImitationDlg::OnBnClickedreleasekinect()
 {
 	// TODO: 在此添加控件通知处理程序代码
-	SafeRelease(myColorFrameReader);
-	SafeRelease(myColorFrameSource);
-	SafeRelease(myDepthFrameReader);
-	SafeRelease(myDepthFrameSource);
-	SafeRelease(myBodyFrameReader);
-	SafeRelease(myBodyFrameSource);
-	SafeRelease(myCoordinateMapper);
-	myKinectSensor->Close();
-	SafeRelease(myKinectSensor);
+	myKinect->close();
 	_cprintf("Kinect source released!\n\n");
 }
 
@@ -613,10 +544,7 @@ void CImitationDlg::OnBnClickedstarttracking()
 {
 	// TODO: 在此添加控件通知处理程序代码
 	Run = true;
-	startTime = clock();
-	ColorThread = new thread(ColorFrame);
-	DepthThread = new thread(DepthFrame);
-	BodyThread = new thread(BodyFrame);
+	MainThread = new thread(Tracking);
 	_cprintf("Is Tracking now....\n\n");
 }
 
@@ -687,7 +615,7 @@ void CImitationDlg::OnBnClickedPhoto()
 	int start = clock();
 	while (clock() - start < 3000);
 	_cprintf("Taking a photo....");
-	imwrite("rgb.png", img_rgb);
-	imwrite("dep.png", img_depth);
+	imwrite("rgb.png", myKinect->getColor());
+	imwrite("dep.png", myKinect->getDepth());
 	_cprintf("Photo is OK\n\n");
 }

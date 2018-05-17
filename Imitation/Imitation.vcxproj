@@ -188,10 +188,13 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Detector.h" />
+    <ClInclude Include="floodfill.h" />
     <ClInclude Include="Imitation.h" />
     <ClInclude Include="ImitationDlg.h" />
     <ClInclude Include="MOTOCOMES.h" />
     <ClInclude Include="Motor.h" />
+    <ClInclude Include="myKinect.h" />
     <ClInclude Include="myVector.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="sign.h" />
@@ -202,6 +205,7 @@
     <ClCompile Include="Imitation.cpp" />
     <ClCompile Include="ImitationDlg.cpp" />
     <ClCompile Include="Motor.cpp" />
+    <ClCompile Include="myKinect.cpp" />
     <ClCompile Include="myVector.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

@@ -1,8 +1,32 @@
-﻿  ImitationDlg.cpp
-d:\project\imitation\imitation\imitationdlg.cpp(185): warning C4244: “参数”: 从“int”转换到“float”，可能丢失数据
-d:\project\imitation\imitation\imitationdlg.cpp(638): warning C4018: “<”: 有符号/无符号不匹配
-d:\project\imitation\imitation\imitationdlg.cpp(641): warning C4018: “<”: 有符号/无符号不匹配
-d:\project\imitation\imitation\imitationdlg.cpp(645): warning C4018: “<”: 有符号/无符号不匹配
-d:\project\imitation\imitation\imitationdlg.cpp(650): warning C4018: “<”: 有符号/无符号不匹配
+﻿  Motor.cpp
+d:\project\imitation\imitation\motor.cpp(206): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\project\imitation\imitation\motor.cpp(207): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\project\imitation\imitation\motor.cpp(208): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\project\imitation\imitation\motor.cpp(209): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\project\imitation\imitation\motor.cpp(210): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\project\imitation\imitation\motor.cpp(211): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\project\imitation\imitation\motor.cpp(212): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+  ImitationDlg.cpp
+d:\project\imitation\imitation\imitationdlg.cpp(30): warning C4838: 从“double”转换到“const float”需要收缩转换
+d:\project\imitation\imitation\imitationdlg.cpp(30): warning C4305: “初始化”: 从“double”到“const float”截断
+d:\project\imitation\imitation\imitationdlg.cpp(31): warning C4838: 从“double”转换到“const float”需要收缩转换
+d:\project\imitation\imitation\imitationdlg.cpp(31): warning C4305: “初始化”: 从“double”到“const float”截断
+d:\project\imitation\imitation\imitationdlg.cpp(158): warning C4244: “参数”: 从“int”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(160): warning C4244: “参数”: 从“int”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(172): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(174): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(194): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(195): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(196): warning C4244: “参数”: 从“float”转换到“int”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(210): warning C4244: “参数”: 从“double”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(211): warning C4244: “参数”: 从“double”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(212): warning C4244: “参数”: 从“double”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(213): warning C4244: “参数”: 从“double”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(273): warning C4244: “初始化”: 从“double”转换到“float”，可能丢失数据
+d:\project\imitation\imitation\imitationdlg.cpp(566): warning C4018: “<”: 有符号/无符号不匹配
+d:\project\imitation\imitation\imitationdlg.cpp(569): warning C4018: “<”: 有符号/无符号不匹配
+d:\project\imitation\imitation\imitationdlg.cpp(573): warning C4018: “<”: 有符号/无符号不匹配
+d:\project\imitation\imitation\imitationdlg.cpp(578): warning C4018: “<”: 有符号/无符号不匹配
+  正在生成代码...
   Imitation.vcxproj -> D:\Project\Imitation\Debug\Imitation.exe
   Imitation.vcxproj -> D:\Project\Imitation\Debug\Imitation.pdb (Partial PDB)

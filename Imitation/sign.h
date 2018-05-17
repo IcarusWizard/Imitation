@@ -1,6 +1,7 @@
 #pragma once
 #ifndef _SIGN_H
 #define _SIGN_H
+const double pi = 3.1415926;
 
 enum SWITH{
 	ON = 1,

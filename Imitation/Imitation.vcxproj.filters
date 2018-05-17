@@ -45,6 +45,15 @@
     <ClInclude Include="sign.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="myKinect.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Detector.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="floodfill.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Imitation.cpp">
@@ -60,6 +69,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="myVector.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="myKinect.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
