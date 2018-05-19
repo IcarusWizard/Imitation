@@ -31,6 +31,7 @@ const float Alpha[7] = { 0, -pi / 2, pi / 2, -pi / 2, -pi / 2, -pi / 2, pi / 2 }
 const float Theta[7] = { 0, 0, 0, -pi / 2, -pi / 2, 0, 0 };
 bool Run;
 double theta[7];
+double thetaTotal[7] = { 0 };
 Motor *myMotor;
 MyKinect* myKinect;
 Detector* detector;
@@ -42,6 +43,7 @@ bool openedMotor = false;
 thread *MainThread;
 vector<double*> thetaRobot;
 vector<double*> thetaProcess;
+vector<double*> thetaRaw;
 vector<Vector3D*> elbowRaw;
 vector<Vector3D*> wristRaw;
 Vector3D elbowTotal(0);
@@ -150,17 +152,20 @@ void processArmState(CameraSpacePoint points[25])
 		elbowTotal = elbowTotal + right_elbow - *elbowRaw[cnt - filtersize];
 		wristTotal = wristTotal + right_wrist - *wristRaw[cnt - filtersize];
 	}
+
 	Vector3D* tem = new Vector3D(right_elbow);
 	elbowRaw.push_back(tem);
 	tem = new Vector3D(right_wrist);
 	wristRaw.push_back(tem);
-	if (cnt < filtersize)
-		InverseKinematics(theta, right_shoulder, elbowTotal / (cnt + 1), wristTotal / (cnt + 1));
-	else
-		InverseKinematics(theta, right_shoulder, elbowTotal / filtersize, wristTotal / filtersize);
+	InverseKinematics(theta, right_shoulder, right_elbow, right_wrist);
+	//if (cnt < filtersize)
+	//	InverseKinematics(theta, right_shoulder, elbowTotal / (cnt + 1), wristTotal / (cnt + 1));
+	//else
+	//	InverseKinematics(theta, right_shoulder, elbowTotal / filtersize, wristTotal / filtersize);
 }
 // main thread
 void Tracking() {
+	Sleep(100);
 	while (Run) {
 		int lasttime = clock();
 		myKinect->update();
@@ -169,18 +174,21 @@ void Tracking() {
 		points = myKinect->getBody();
 		DepthSpacePoint hand;
 		myKinect->camera2depth(points + 11, &hand, 1);
-		UINT16 hand_depth = img_depth.at<UINT16>(hand.Y, hand.X);
-		UINT16 bbox = 47000 / hand_depth;
-		Mat seg = img_depth(Rect(hand.X - bbox, hand.Y - bbox, 2 * bbox, 2 * bbox));
+		UINT16 hand_depth = img_depth.at<UINT16>(int(hand.Y), int(hand.X));
+		UINT16 bbox = UINT16(47000 / (hand_depth + 1));
+		Mat seg = img_depth(Rect(int(hand.X - bbox), int(hand.Y - bbox), 2 * bbox, 2 * bbox));
 		Mat mask(seg.size().height, seg.size().width, CV_16UC1);
+		for (int i = 0; i < mask.size().height; ++i)
+			for (int j = 0; j < mask.size().width; ++j)
+				mask.at<UINT16>(i, j) = 0;
 		floodFillDepth(seg, mask, hand_depth, bbox, bbox, 15);
 		seg = seg.mul(mask);
 		Mat resized(48, 48, CV_16UC1);
 		resize(seg, resized, Size(48, 48));
 		if (openedMotor && enableMotor)
-		{	
+		{
 			// solve first four angle
-			processArmState(points); 
+			processArmState(points);
 			// finger detect
 			int pos[10];
 			detector->detect(resized, pos);
@@ -268,25 +276,61 @@ void Tracking() {
 			invert(Q2T * Q2, invert2);
 			Mat THETA2 = invert2 * Q2T * Y;
 			float k = THETA2.at<float>(0, 0);
-			float bb = THETA2.at<float>(0, 1);
-			float d = abs(bb / sqrt(k * k + 1)); // not use
+			//float bb = THETA2.at<float>(0, 1);
+			//float d = abs(bb / sqrt(k * k + 1)); // not use
 			float alpha = atan(-1 / k) + pi / 2;
 			Mat R07 = R07_ * Rot(0, alpha);
 			Mat R04T;
-			transpose(R04, R04T);
+			invert(R04, R04T);
 			Mat R47 = R04T * R07;
-			theta[5] = acos(R47.at<float>(1, 2));
-			theta[4] = asin(R47.at<float>(0, 2) / sin(theta[5]));
+			theta[4] = atan(R47.at<float>(0, 2) / R47.at<float>(2, 2));
+			theta[5] = asin(R47.at<float>(0, 2) / sin(theta[4]));
 			theta[6] = asin(R47.at<float>(1, 1) / sin(theta[5]));
+
+			if (_isnan(theta[4]) || _isnan(theta[5]) || _isnan(theta[6]))
+			{
+				if (thetaProcess.size() > 0)
+				{
+					theta[4] = thetaProcess[thetaProcess.size() - 1][4];
+					theta[5] = thetaProcess[thetaProcess.size() - 1][5];
+					theta[6] = thetaProcess[thetaProcess.size() - 1][6];
+				}
+				else
+				{
+					theta[4] = 0;
+					theta[5] = 0;
+					theta[6] = 0;
+				}
+			}
+			
+			int cnt = thetaRaw.size();
+			if (cnt < filtersize)
+			{
+				for (int i = 0; i < 7; ++i)
+					thetaTotal[i] += theta[i];
+			}
+			else
+			{
+				for (int i = 0; i < 7; ++i)
+					thetaTotal[i] = thetaTotal[i] + theta[i] - thetaRaw[cnt - filtersize][i];
+			}
 
 			double* tem = new double[7];
 			for (auto i = 0; i < 7; ++i)
 				tem[i] = theta[i];
+			thetaRaw.push_back(tem);
+
+			for (int i = 0; i < 7; ++i)
+				theta[i] = thetaTotal[i] / (cnt < filtersize ? cnt : filtersize);
+			
+			tem = new double[7];
+			for (auto i = 0; i < 7; ++i)
+				tem[i] = theta[i];
 			thetaProcess.push_back(tem);
+
 			double *rtheta = new double[7];
 			myMotor->getTheta(rtheta);
 			thetaRobot.push_back(rtheta);
-			int cnt = elbowRaw.size();
 			if (cnt % outputPeriod == 0)
 			{
 				_cprintf("Inverse Kinematics Result:");
@@ -299,9 +343,11 @@ void Tracking() {
 		}
 		else
 		{
-			imshow("segmentation", resized);
+			cvNamedWindow("segmentation", 0);
+			imshow("segmentation", resized * 200);
+			cvWaitKey(1);
 		}
-		_cprintf("time cost of last frame:\t%d", clock() - lasttime);
+		_cprintf("time cost of last frame:\t%d\n", clock() - lasttime);
 	}
 }
 void InitConsoleWindow()
@@ -564,21 +610,44 @@ void CImitationDlg::OnBnClickedstoptracking()
 	_cprintf("Tracking is stopped!\n");
 	ofstream f1("thetaRobot.txt", ios::out);
 	for (auto i = 0; i < thetaRobot.size(); ++i)
-		f1 << thetaRobot[i][0] << " " << thetaRobot[i][1] << " " << thetaRobot[i][2] << " " << thetaRobot[i][3] << endl;
+	{
+		for (int j = 0; j < 7; ++j)
+			f1 << thetaRobot[i][j] << " ";
+		f1 << endl;
+	}	
+	f1.flush();
+	f1.close();
+
 	ofstream f2("thetaProcess.txt", ios::out);
-	for (auto i = 0; i < thetaProcess.size(); ++i)
-		f2 << thetaProcess[i][0] << " " << thetaProcess[i][1] << " " << thetaProcess[i][2] << " " << thetaProcess[i][3] << endl;
+	for (auto i = 0; i < thetaProcess.size(); ++i) {
+		for (int j = 0; j < 7; ++j)
+			f2 << thetaProcess[i][j] << " ";
+		f2 << endl;
+	}
+	f2.flush();
 	f2.close();
+
+	ofstream f5("thetaRaw.txt", ios::out);
+	for (auto i = 0; i < thetaRaw.size(); ++i) {
+		for (int j = 0; j < 7; ++j)
+			f5 << thetaRaw[i][j] << " ";
+		f5 << endl;
+	}
+	f5.flush();
+	f5.close();
+
 	ofstream f3("elbowdata.txt", ios::out);
 	for (auto i = 0; i < elbowRaw.size(); ++i)
 		f3 << *elbowRaw[i];
 	f3.flush();
 	f3.close();
+
 	ofstream f4("wristdata.txt", ios::out);
 	for (auto i = 0; i < wristRaw.size(); ++i)
 		f4 << *wristRaw[i];
 	f4.flush();
 	f4.close();
+
 	_cprintf("File saved!\n\n");
 }
 
