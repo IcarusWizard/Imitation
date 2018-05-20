@@ -38,8 +38,8 @@ extern void pulse2angle(int *pulse, double *angle)
 {
 	for (int i = 0; i < 5; ++i)
 		angle[i] = pulse[i] / 1149.16 * _PI / 180.0;
-	angle[5] = int(pulse[5] / 1012.62 * _PI / 180.0);
-	angle[6] = int(pulse[6] / 671.29 * _PI / 180.0);
+	angle[5] = pulse[5] / 1012.62 * _PI / 180.0;
+	angle[6] = pulse[6] / 671.29 * _PI / 180.0;
 	//S -90 ~ 270
 	//L -110 ~ 110
 	//E -170 ~ 170

@@ -48,7 +48,7 @@ vector<Vector3D*> elbowRaw;
 vector<Vector3D*> wristRaw;
 Vector3D elbowTotal(0);
 Vector3D wristTotal(0);
-int outputPeriod = 4;
+int outputPeriod = 2;
 int filtersize = 50;
 #pragma endregion
 #pragma region Global Function
@@ -165,6 +165,10 @@ void processArmState(CameraSpacePoint points[25])
 }
 // main thread
 void Tracking() {
+	VideoWriter myWriter;
+	myWriter.open("depth.avi", -1, 12, Size(512, 424), false);
+	VideoWriter ColorWriter;
+	ColorWriter.open("color.avi", CV_FOURCC('M', 'J', 'P', 'G'), 12, Size(1920, 1080), true);
 	Sleep(100);
 	while (Run) {
 		int lasttime = clock();
@@ -182,9 +186,9 @@ void Tracking() {
 			for (int j = 0; j < mask.size().width; ++j)
 				mask.at<UINT16>(i, j) = 0;
 		floodFillDepth(seg, mask, hand_depth, bbox, bbox, 15);
-		seg = seg.mul(mask);
+		Mat seg_ = seg.mul(mask);
 		Mat resized(48, 48, CV_16UC1);
-		resize(seg, resized, Size(48, 48));
+		resize(seg_, resized, Size(48, 48));
 		if (openedMotor && enableMotor)
 		{
 			// solve first four angle
@@ -203,6 +207,20 @@ void Tracking() {
 				fingers_depth[i].Y = pos[2 * i];
 				fingers_depthval[i] = img_depth.at<UINT16>(fingers_depth[i].Y, fingers_depth[i].X);
 			}
+
+			const int R = 3;
+			img_depth = img_depth * 200;
+			circle(img_depth, Point(pos[1], pos[0]), R, Scalar(255, 0, 0), -1);
+			circle(img_depth, Point(pos[3], pos[2]), R, Scalar(127, 127, 0), -1);
+			circle(img_depth, Point(pos[5], pos[4]), R, Scalar(0, 255, 0), -1);
+			circle(img_depth, Point(pos[7], pos[6]), R, Scalar(0, 127, 127), -1);
+			circle(img_depth, Point(pos[9], pos[8]), R, Scalar(0, 0, 255), -1);
+			cvNamedWindow("depth", 0);
+			imshow("depth", img_depth);
+			myWriter << img_depth;
+			ColorWriter << img_color;
+			cvWaitKey(1);
+
 			myKinect->depth2camera(fingers_depth, fingers_camera, fingers_depthval, 5);
 			Vector3D right_shoulder(points[8]);
 			right_shoulder = rightTrans(right_shoulder);
@@ -321,7 +339,7 @@ void Tracking() {
 			thetaRaw.push_back(tem);
 
 			for (int i = 0; i < 7; ++i)
-				theta[i] = thetaTotal[i] / (cnt < filtersize ? cnt : filtersize);
+				theta[i] = thetaTotal[i] / (cnt < filtersize ? (cnt + 1) : filtersize);
 			
 			tem = new double[7];
 			for (auto i = 0; i < 7; ++i)
@@ -349,6 +367,8 @@ void Tracking() {
 		}
 		_cprintf("time cost of last frame:\t%d\n", clock() - lasttime);
 	}
+	myWriter.release();
+	ColorWriter.release();
 }
 void InitConsoleWindow()
 {
@@ -440,7 +460,7 @@ BOOL CImitationDlg::OnInitDialog()
 	wristTotal.z = 0;
 	InitConsoleWindow();
 	_cprintf("Open console OK\n\n");
-	myKinect = new MyKinect(false, true, true);
+	myKinect = new MyKinect(true, true, true);
 	detector = new Detector();
 	// 将“关于...”菜单项添加到系统菜单中。
 
@@ -655,6 +675,7 @@ void CImitationDlg::OnBnClickedstoptracking()
 void CImitationDlg::OnBnClickedstartimitation()
 {
 	// TODO: 在此添加控件通知处理程序代码
+	Sleep(5000);
 	enableMotor = true;
 	_cprintf("Motor is imitating.....\n\n");
 }
